@@ -1,0 +1,11 @@
+{
+  "configurations": [
+    {
+      "name": "Arduino",
+      "includePath": ["${workspaceFolder}/**"],
+      "defines": ["ESP32"],
+      "configurationProvider": "ms-vscode.azure-iot-edge"
+    }
+  ],
+  "version": 4
+}
