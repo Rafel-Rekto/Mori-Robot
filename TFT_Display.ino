@@ -18,6 +18,8 @@ int mKiriX = 30;
 int mKananX = 100;
 int mY = 35;
 
+int mz = 0;
+
 // Fungsi buatan sendiri yang akan dipanggil oleh file utama nanti
 void siapkanLayar() {
   // Inisialisasi layar ST7735R (tipe black tab/red tab umum)
