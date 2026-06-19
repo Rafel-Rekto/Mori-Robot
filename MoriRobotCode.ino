@@ -13,30 +13,23 @@ IPAddress gateway(192, 168, 100, 1);    // Alamat Router rumah (biasanya diakhir
 IPAddress subnet(255, 255, 255, 0);     // Subnet Mask standar
 IPAddress primaryDNS(8, 8, 8, 8);       // DNS Google (Opsional tapi bagus agar koneksi stabil)
 
-enum EkspresiMori {
-  MORI_DIAM,
-  MORI_LIRIK_KANAN,
-  MORI_LIRIK_KIRI,
-  MORI_BERPIKIR,
-  MORI_TIDUR,
-  MORI_BINGUNG,
-  MORI_BAHAGIA
-};
+unsigned long lastBlink = 0;
 
-void siapkanLayar();
-void updateWajahMori();
-void setEkspresi(EkspresiMori ekspresiBaru);
 void tanyaQwen(String prompt);
 
 void setup() {
   Serial.begin(115200);
 
-  siapkanLayar(); // Panggil fungsi untuk menyiapkan layar TFT
+  //siapkanLayar(); // Inisialisasi layar TFT
+  //drawIdle();
+  // siapkanMic(); // Panggil fungsi mic
+  // Serial.println("Mic Mori SIAP! Buka Serial Plotter sekarang.");
+  siapkanSpeaker(); // Nyalakan mesin speaker
+  Serial.println("Speaker Mori SIAP! Bersiaplah mendengar bunyi...");
   
   WiFi.mode(WIFI_STA);     // Memastikan ESP32 bertindak sebagai Client (bukan pemancar)
   WiFi.disconnect(true);   // Memaksa ESP32 melupakan sisa ingatan Wi-Fi yang nyangkut
   delay(1000);
-
 
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
     Serial.println("[Error] Gagal mengatur Static IP!");
@@ -60,15 +53,30 @@ void setup() {
 
 void loop() {
 
-  updateWajahMori();
+  // if (millis() - lastBlink > 5000) {
+
+  //   blink();
+
+  //   lastBlink = millis();
+
+  //   drawIdle();
+  // }
+  tesBunyiBeep();
   
-  // 2. MENDENGARKAN INPUT DARI SERIAL MONITOR
+  Serial.println("Beep selesai. Menunggu 3 detik...");
+  delay(3000); // Jeda 3 detik sebelum bunyi lagi
+  tesVisualSuara();
+
   if (Serial.available() > 0) {
+
     String userInput = Serial.readStringUntil('\n');
-    userInput.trim(); // Membersihkan spasi atau karakter enter tak terlihat
+
+    userInput.trim();
 
     if (userInput.length() > 0) {
+
       Serial.println("\nKamu: " + userInput);
+
       tanyaQwen(userInput);
     }
   }
@@ -94,7 +102,7 @@ void tanyaQwen(String prompt) {
     serializeJson(doc, requestBody);
 
     Serial.println("[Sistem] Sebentar yah... Mori sedang berpikir...");
-    setEkspresi(MORI_BERPIKIR);
+    animateThinking();
 
     // Menembak server dengan HTTP POST
     int httpResponseCode = http.POST(requestBody);
@@ -108,14 +116,24 @@ void tanyaQwen(String prompt) {
 
       if (!error) {
         String reply = responseDoc["response"].as<String>();
+        drawHappy();
+        delay(400);
+        animateTalking();
         Serial.println("Mori: " + reply);
-        setEkspresi(MORI_BAHAGIA);
+        drawIdle();
+        
       } else {
         Serial.print("[Error] Gagal membedah JSON: ");
+        drawConfused();
+        delay(1000);
+        drawIdle();
         Serial.println(error.c_str());
       }
     } else {
+      drawConfused();
       Serial.print("[Error] HTTP Request gagal. Kode: ");
+      delay(1000);
+      drawIdle();
       Serial.println(httpResponseCode);
       if(httpResponseCode == -11) {
          Serial.println("[Info] Timeout! Laptop butuh waktu lebih lama dari batas waktu ESP32.");
@@ -125,7 +143,10 @@ void tanyaQwen(String prompt) {
     // Selalu tutup koneksi agar memori tidak bocor
     http.end(); 
   } else {
+    drawSleeping();
     Serial.println("[Error] Koneksi WiFi terputus.");
+    delay(1000);
+    drawIdle();
   }
 }
 
