@@ -328,3 +328,9 @@ void blink() {
     delay(20);
   }
 }
+
+void drawListening() {
+  clearFaceArea();
+  // Menggambar mata lebih besar sebagai tanda fokus mendengar
+  drawEyes(LEFT_X - 4, RIGHT_X - 4, EYE_Y - 4, EYE_W + 8, EYE_H + 8, ST7735_CYAN);
+}

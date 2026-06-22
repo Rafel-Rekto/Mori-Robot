@@ -20,12 +20,8 @@ void tanyaQwen(String prompt);
 void setup() {
   Serial.begin(115200);
 
-  //siapkanLayar(); // Inisialisasi layar TFT
-  //drawIdle();
-  // siapkanMic(); // Panggil fungsi mic
-  // Serial.println("Mic Mori SIAP! Buka Serial Plotter sekarang.");
-  siapkanSpeaker(); // Nyalakan mesin speaker
-  Serial.println("Speaker Mori SIAP! Bersiaplah mendengar bunyi...");
+  siapkanLayar(); // Inisialisasi layar TFT
+  drawIdle();
   
   WiFi.mode(WIFI_STA);     // Memastikan ESP32 bertindak sebagai Client (bukan pemancar)
   WiFi.disconnect(true);   // Memaksa ESP32 melupakan sisa ingatan Wi-Fi yang nyangkut
@@ -49,23 +45,22 @@ void setup() {
   Serial.println(WiFi.localIP());
   Serial.println("Silahkan tanya, Mori siap membantu...");
 
+  siapkanMic(); 
+  Serial.println("[Sistem] Telinga Mori Aktif! Sedang mengirim suara ke laptop...");
+
 }
 
 void loop() {
 
-  // if (millis() - lastBlink > 5000) {
+  if (millis() - lastBlink > 5000) {
 
-  //   blink();
+    blink();
 
-  //   lastBlink = millis();
+    lastBlink = millis();
 
-  //   drawIdle();
-  // }
-  tesBunyiBeep();
-  
-  Serial.println("Beep selesai. Menunggu 3 detik...");
-  delay(3000); // Jeda 3 detik sebelum bunyi lagi
-  tesVisualSuara();
+    drawIdle();
+  }
+  kirimSuaraUDP();
 
   if (Serial.available() > 0) {
 
