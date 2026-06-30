@@ -7,6 +7,10 @@ import json
 from elevenlabs.client import ElevenLabs
 import pygame
 import os
+from dotenv import load_dotenv
+
+# Memuat variabel lingkungan dari file .env
+load_dotenv()
 
 # ==========================================
 # 1. KONFIGURASI AI (WHISPER & ELEVENLABS)
@@ -15,7 +19,7 @@ print("[Sistem] Memuat model Whisper 'small' (~241MB)...")
 model = WhisperModel("small", device="cpu", compute_type="int8")
 
 # Konfigurasi ElevenLabs
-API_KEY = "sk_dad06c95cec521ec6cae0c5054841229e3d0012699db0920" 
+API_KEY = os.getenv("ELEVENLABS_KEY")
 client_eleven = ElevenLabs(api_key=API_KEY)
 VOICE_ID = "N2lVS1w4EtoT3dr4eOWO" # ID Callum
 
@@ -25,7 +29,17 @@ print("[Sistem] Seluruh Model AI SIAP!")
 # 2. KONFIGURASI JARINGAN UDP & VAD
 # ==========================================
 UDP_IP = "0.0.0.0" 
-UDP_PORT = 5005    
+UDP_PORT = 5005  
+
+ESP32_IP = "192.168.100.200"
+ESP32_PORT_STATE = 5006
+sock_state = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+def kirim_status(status_code):
+    try:
+        sock_state.sendto(str(status_code).encode(), (ESP32_IP, ESP32_PORT_STATE))
+    except Exception as e:
+        print(f"[Error] Gagal mengirim status motorik: {e}")
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
@@ -65,7 +79,7 @@ def tanya_qwen(prompt_user):
 # 4. FUNGSI PITA SUARA (ELEVENLABS)
 # ==========================================
 def buat_dan_putar_suara(teks):
-    print(f"[TTS] Memproses suara Callum...")
+    print(f"[TTS] Memproses suara...")
     OUTPUT_FILE = "suara_mori_eleven.mp3"
     
     try:
@@ -106,6 +120,7 @@ while True:
         if volume > SILENCE_THRESHOLD:
             if not is_speaking:
                 print("\n[Mori] (Mendengarkan...)")
+                kirim_status(1) # MENGUBAH MATA MENJADI MODE MENDENGAR
             is_speaking = True
             silence_start_time = time.time()
             audio_buffer.extend(data)
@@ -118,6 +133,7 @@ while True:
                 
                 if duration_seconds < MIN_RECORD_DURATION:
                     print(f"[Sistem] Mengabaikan suara pendek ({duration_seconds:.1f} dtk)")
+                    kirim_status(0) # KEMBALI KE IDLE
                 else:
                     print(f"[Sistem] Memproses suara ({duration_seconds:.1f} dtk)...")
                     audio_np = np.frombuffer(audio_buffer, dtype=np.int16).astype(np.float32) / 32768.0
@@ -137,19 +153,23 @@ while True:
                     if teks_lengkap != "":
                         teks_kecil = teks_lengkap.lower()
                         
-                        # FIREWALL WAKE WORD
                         if "mori" in teks_kecil:
                             print(f"\n[+] VALID COMMAND: {teks_lengkap}")
                             
-                            # 1. Panggil Qwen
+                            kirim_status(2) # MENGUBAH MATA MENJADI MODE BERPIKIR
                             jawaban = tanya_qwen(teks_lengkap)
                             print(f"\nO O MORI MENJAWAB:\n{jawaban}\n")
                             
-                            # 2. Putar Suara
+                            kirim_status(3) # MENGUBAH MATA MENJADI MODE BICARA
                             buat_dan_putar_suara(jawaban)
+                            
+                            kirim_status(0) # KEMBALI KE IDLE SETELAH SELESAI BICARA
                             
                         else:
                             print(f"[-] Mengabaikan (Tidak ada panggilan Mori): {teks_lengkap}")
+                            kirim_status(0) # KEMBALI KE IDLE
+                    else:
+                        kirim_status(0) # KEMBALI KE IDLE (Jika suara diabaikan Whisper)
                 
                 audio_buffer.clear()
                 is_speaking = False

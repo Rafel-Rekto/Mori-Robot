@@ -1,40 +1,36 @@
 #include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
+#include <WiFiUdp.h> // Tambahan untuk menerima sinyal saraf motorik
 
-//Rafel ganteng 
 const char* ssid = "BAWAH_Plus";
 const char* password = "Nabil123";
-const char* ollama_url = "http://192.168.100.212:11434/api/generate"; // Replace with your Ollama API endpoint
 
-//ini untuk bypass biar gak lelet
-IPAddress local_IP(192, 168, 100, 200); // IP Khusus untuk ESP32 Mori
-IPAddress gateway(192, 168, 100, 1);    // Alamat Router rumah (biasanya diakhiri angka 1)
-IPAddress subnet(255, 255, 255, 0);     // Subnet Mask standar
-IPAddress primaryDNS(8, 8, 8, 8);       // DNS Google (Opsional tapi bagus agar koneksi stabil)
+// IP Address Statis ESP32
+IPAddress local_IP(192, 168, 100, 200);
+IPAddress gateway(192, 168, 100, 1);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress primaryDNS(8, 8, 8, 8);
+
+// Buka port khusus untuk menerima status dari Python
+WiFiUDP udpState;
+const int statePort = 5006; 
 
 unsigned long lastBlink = 0;
-
-void tanyaQwen(String prompt);
+int currentState = 0; // 0=Idle, 1=Mendengar, 2=Berpikir, 3=Bicara
 
 void setup() {
   Serial.begin(115200);
 
-  siapkanLayar(); // Inisialisasi layar TFT
+  siapkanLayar();
   drawIdle();
   
-  WiFi.mode(WIFI_STA);     // Memastikan ESP32 bertindak sebagai Client (bukan pemancar)
-  WiFi.disconnect(true);   // Memaksa ESP32 melupakan sisa ingatan Wi-Fi yang nyangkut
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
   delay(1000);
 
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
-    Serial.println("[Error] Gagal mengatur Static IP!");
-  }
-  // --------------------------
-
+  WiFi.config(local_IP, gateway, subnet, primaryDNS);
   WiFi.begin(ssid, password);
-  Serial.print("Menghubungkan ke WiFi");
   
+  Serial.print("Menghubungkan ke WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -43,105 +39,54 @@ void setup() {
   Serial.println("\nConnected to WiFi");
   Serial.print("IP Address ESP32: ");
   Serial.println(WiFi.localIP());
-  Serial.println("Silahkan tanya, Mori siap membantu...");
 
   siapkanMic(); 
-  Serial.println("[Sistem] Telinga Mori Aktif! Sedang mengirim suara ke laptop...");
-
+  
+  // Mulai dengarkan sinyal status dari Python
+  udpState.begin(statePort); 
+  Serial.println("[Sistem] Telinga & Saraf Motorik Mori Aktif!");
 }
 
 void loop() {
-
-  if (millis() - lastBlink > 5000) {
-
-    blink();
-
-    lastBlink = millis();
-
-    drawIdle();
-  }
-  kirimSuaraUDP();
-
-  if (Serial.available() > 0) {
-
-    String userInput = Serial.readStringUntil('\n');
-
-    userInput.trim();
-
-    if (userInput.length() > 0) {
-
-      Serial.println("\nKamu: " + userInput);
-
-      tanyaQwen(userInput);
-    }
-  }
-}
-
-// 3. FUNGSI UTAMA MENEMBAK API
-void tanyaQwen(String prompt) {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(ollama_url);
-    http.addHeader("Content-Type", "application/json");
+  // 1. CEK SINYAL STATUS DARI PYTHON
+  int packetSize = udpState.parsePacket();
+  if (packetSize) {
+    char incomingPacket[10]; // Buffer kecil karena hanya menerima angka 0-3
+    int len = udpState.read(incomingPacket, 10);
+    if (len > 0) incomingPacket[len] = 0;
     
-    // Konfigurasi Timeout (Penting!)
-    http.setTimeout(20000); 
-
-    // Merakit paket JSON menggunakan ArduinoJson v7
-    JsonDocument doc;
-    doc["model"] = "mori";
-    doc["prompt"] = prompt;
-    doc["stream"] = false;
-
-    String requestBody;
-    serializeJson(doc, requestBody);
-
-    Serial.println("[Sistem] Sebentar yah... Mori sedang berpikir...");
-    animateThinking();
-
-    // Menembak server dengan HTTP POST
-    int httpResponseCode = http.POST(requestBody);
-
-    // 4. MEMBEDAH JAWABAN
-    if (httpResponseCode == 200) {
-      String response = http.getString();
+    String command = String(incomingPacket);
+    command.trim();
+    int newState = command.toInt();
+    
+    // Hanya ubah dan gambar ulang wajah jika statusnya berbeda (mencegah kedip berulang)
+    if (newState != currentState) {
+      currentState = newState;
+      lastBlink = millis(); // Reset timer kedip
       
-      JsonDocument responseDoc;
-      DeserializationError error = deserializeJson(responseDoc, response);
-
-      if (!error) {
-        String reply = responseDoc["response"].as<String>();
-        drawHappy();
-        delay(400);
-        animateTalking();
-        Serial.println("Mori: " + reply);
-        drawIdle();
-        
-      } else {
-        Serial.print("[Error] Gagal membedah JSON: ");
-        drawConfused();
-        delay(1000);
-        drawIdle();
-        Serial.println(error.c_str());
-      }
-    } else {
-      drawConfused();
-      Serial.print("[Error] HTTP Request gagal. Kode: ");
-      delay(1000);
-      drawIdle();
-      Serial.println(httpResponseCode);
-      if(httpResponseCode == -11) {
-         Serial.println("[Info] Timeout! Laptop butuh waktu lebih lama dari batas waktu ESP32.");
-      }
+      // Gambar ekspresi awal sesuai status baru
+      if (currentState == 0) drawIdle();
+      else if (currentState == 1) drawListening(); // Mata membesar (Tanpa Delay)
+      else if (currentState == 2) drawThinkingEyes(); // Mata menyipit
     }
-    
-    // Selalu tutup koneksi agar memori tidak bocor
-    http.end(); 
-  } else {
-    drawSleeping();
-    Serial.println("[Error] Koneksi WiFi terputus.");
-    delay(1000);
-    drawIdle();
   }
-}
 
+  // 2. JALANKAN ANIMASI LOOPING (Jika diperlukan)
+  if (currentState == 0) {
+    // Mode Idle: Kedip setiap 5 detik
+    if (millis() - lastBlink > 5000) {
+      blink();
+      lastBlink = millis();
+      drawIdle();
+    }
+  } else if (currentState == 2) {
+     // Mode Berpikir: Animasi titik (Python sedang memproses Ollama, jadi aman pakai delay)
+     animateThinking(); 
+  } else if (currentState == 3) {
+     // Mode Bicara: Animasi mulut/mata bergerak (Python sedang memutar suara)
+     animateTalking();
+  }
+
+  // 3. SELALU KIRIM SUARA KE LAPTOP
+  kirimSuaraUDP();
+}
